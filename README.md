@@ -1,38 +1,75 @@
-# igs03-auto-config
-Example of iGS03E auto configuration by Multicast DNS Service Discovery.
+# iGS03 Batch Configuration Tools
+
+Tools for batch configuring Ingics iGS03 gateways via SSH (default) or Telnet.
 
 ## Setup
-Install required packages
-```
-pip install -r requirements.txt
-```
 
-## Usage
+1. Install required packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Create and activate a virtual environment (recommended):
+   ```bash
+   python -m venv .venv
+   .\.venv\Scripts\activate  # Windows
+   source .venv/bin/activate  # Linux/macOS
+   ```
 
-Execute the autoconfig.py
-```
-python autoconfig.py
-```
+## Tools
 
-Power on and plug iGS03E on the same network.
-The script should find the new appear iGS03E device and try to config it through telenet.
+### 1. Batch Configurator (`batch-config.py`)
+This is the **main script** for batch configuring iGS03 devices that already have network settings and are accessible on your network.
 
-Example output, it found two iGS03E and check the HTTP CN_CHECK setting.
+**Usage:**
+```bash
+python batch-config.py <IP1> [IP2] ... [OPTIONS]
 ```
-[2021-04-01 10:06:09,861] INFO - Found IGS03E-v1.0.5.0 [10:52:1C:89:C2:07]._ble-gw._tcp.local. at 192.168.1.109
-[2021-04-01 10:06:09,861] INFO - Connecting, try 1 ...
-[2021-04-01 10:06:09,865] INFO - Login as admin, admin
-[2021-04-01 10:06:09,875] INFO - Logged in ...
-[2021-04-01 10:06:09,924] INFO - Get HTTP CN_CHECK = 1
-[2021-04-01 10:06:09,925] INFO - Found IGS03E-v1.0.5.0 [F0:08:D1:6C:A8:17]._ble-gw._tcp.local. at 192.168.1.104
-[2021-04-01 10:06:09,925] INFO - Connecting, try 1 ...
-[2021-04-01 10:06:09,932] INFO - Login as admin, admin
-[2021-04-01 10:06:09,961] INFO - Logged in ...
-[2021-04-01 10:06:10,015] INFO - Get HTTP CN_CHECK = 1
+**Example:**
+```bash
+python batch-config.py 192.168.1.108 192.168.1.128 --username admin --password admin
 ```
 
-And you can modify the autoconfig.py for your own setting requiremenet.
+### 2. iGS03E mDNS Configurator (`igs03e-batch-config-by-mdns.py`)
+A specialized version for **iGS03E** devices. It uses mDNS to automatically discover devices on the local network and apply configuration as they appear.
 
-### Notice
+> [!IMPORTANT]
+> **CAUTION**: This script will automatically apply configuration settings to **ALL** iGS03E devices it discovers on the local network. Use with care.
 
-The scripts been tested on Ubuntu 20.04 with Python 3.8.
+**Usage:**
+```bash
+python igs03e-batch-config-by-mdns.py [OPTIONS]
+```
+
+**Protocol Auto-Detection:**
+This tool automatically selects the connection protocol based on the device firmware version (V3.0.0+ uses SSH, otherwise Telnet). No manual protocol selection is required.
+
+## Initial Configuration for New Devices
+For new **iGS03W/iGS03M/iGS03MP** devices, you can follow these steps for initial setup:
+
+1. **Power on** the iGS03W/M/MP device.
+2. **Connect** to the device's WiFi AP manually (it usually creates an open AP).
+3. **Run the batch configurator** with the default AP gateway address:
+   ```bash
+   python batch-config.py 192.168.10.1
+   ```
+4. **Repeat** steps 1-3 for each additional device.
+
+## Customizing Commands
+Both scripts are designed to be updated manually for your specific requirements. You must modify the **desired** commands in the source code.
+
+For example, in `batch-config.py`:
+```python
+# modify these lines for your own settings
+client.exec('MQTT CLIENTID', f'{model}_{identity}')
+client.exec('MQTT PUBTOPIC', f'GNS_{identity}')
+client.exec('BLE PAYLOADWD 1', 'XXFFXX008XBC')
+```
+
+## Options
+- `--telnet`: Use Telnet protocol (SSH is the default).
+- `--username`: Custom login username (default: `admin`).
+- `--password`: Custom login password (default: `admin`).
+
+## Notice
+The scripts support SSH and Telnet. SSH is used for V3.0.0 and above firmware, and Telnet is used for legacy firmware.
+These tools require Python 3.8+.
