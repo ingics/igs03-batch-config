@@ -13,6 +13,10 @@ except ImportError:
 
 logger = logging.getLogger()
 
+# Suppress paramiko tracebacks in the output
+if paramiko:
+    logging.getLogger("paramiko").setLevel(logging.CRITICAL)
+
 class IgsCmdError(Exception):
     def __init__(self, rst, cmd):
         self.rst = rst
@@ -22,7 +26,7 @@ class IgsCmdError(Exception):
 class IgsBaseClient:
     def exec(self, cmd, *args, ignore_error_4=False, expect_close=False):
         raise NotImplementedError()
-    
+
     def get(self, cmd):
         ans = self.exec(cmd)
         if '=' in ans:
@@ -34,14 +38,28 @@ class IgsBaseClient:
 
     def reset(self):
         return self.exec('REBOOT DEFAULT', expect_close=True)
-    
+
+    def get_sys_info(self):
+        data = self.exec('SYS INFO')
+        info = {}
+        for line in data.split('\n'):
+            line = line.strip()
+            if '=' in line:
+                key, value = line.split('=', 1)
+                info[key.strip()] = value.strip()
+        return info
+
     def close(self):
         pass
 
 class IgsTelnetClient(IgsBaseClient):
-    def __init__(self, host, username, password):
+    def __init__(self, host, username, password, retry=5):
         if telnetlib is None:
-            raise ImportError("telnetlib is not available in this Python version (3.13+). Please use SSH or a Python version < 3.13.")
+            raise ImportError(
+                "telnetlib is not available in this Python version (3.13+). "
+                "Please install the backport: pip install telnetlib-313-and-up"
+            )
+        self.host = host
         self.client = telnetlib.Telnet(host)
         self.client.read_until(b'login:')
         self.client.write(username.encode() + b'\n')
@@ -54,15 +72,18 @@ class IgsTelnetClient(IgsBaseClient):
     def exec(self, cmd, *args, ignore_error_4=False, expect_close=False):
         if len(args) > 0:
             for arg in args:
-                cmd = cmd + ' "' + str(arg) + '"'
+                if isinstance(arg, (int, float)):
+                    cmd = cmd + ' ' + str(arg)
+                else:
+                    cmd = cmd + ' "' + str(arg) + '"'
         try:
             self.client.write(cmd.encode() + b'\n')
             data_bytes = self.client.read_until(b'RESULT:')
             data = data_bytes.decode('utf8', errors='ignore')[:-7].strip()
-            
+
             result_bytes = self.client.read_until(b'>')
             result_str = result_bytes.decode('utf8', errors='ignore')[:-1].strip()
-            
+
             try:
                 result = int(result_str)
             except ValueError:
@@ -93,12 +114,12 @@ class IgsSshClient(IgsBaseClient):
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
-            self.ssh.connect(host, username=username, password=password, 
+            self.ssh.connect(host, username=username, password=password,
                              look_for_keys=False, allow_agent=False, timeout=10)
         except Exception as e:
             raise e
-        
-        # Open an interactive shell session to mimic telnet behavior if needed, 
+
+        # Open an interactive shell session to mimic telnet behavior if needed,
         # but iGS works with exec_command for individual commands usually.
         # However, the prompt/result format might be easier to handle in a shell.
         self.shell = self.ssh.invoke_shell()
@@ -121,13 +142,16 @@ class IgsSshClient(IgsBaseClient):
     def exec(self, cmd, *args, ignore_error_4=False, expect_close=False):
         if len(args) > 0:
             for arg in args:
-                cmd = cmd + ' "' + str(arg) + '"'
-        
+                if isinstance(arg, (int, float)):
+                    cmd = cmd + ' ' + str(arg)
+                else:
+                    cmd = cmd + ' "' + str(arg) + '"'
+
         try:
             self.shell.send(cmd + "\n")
             # iGS echo back the command? If so, we might need to skip it.
             # The current telnet code doesn't seem to worry about echo.
-            
+
             data_bytes = self._read_until(b'RESULT:')
             # Strip the echo of the command if present (depends on shell config)
             data = data_bytes.decode('utf8', errors='ignore')[:-7].strip()
@@ -136,7 +160,7 @@ class IgsSshClient(IgsBaseClient):
 
             result_bytes = self._read_until(b'>')
             result_str = result_bytes.decode('utf8', errors='ignore')[:-1].strip()
-            
+
             try:
                 result = int(result_str)
             except ValueError:
@@ -147,6 +171,7 @@ class IgsSshClient(IgsBaseClient):
                 return ''
             elif result != 0:
                 raise IgsCmdError(result, cmd)
+            # logger.debug(f"Raw data from {cmd}: {data!r}")
             return data
         except Exception as e:
             if expect_close:
@@ -163,7 +188,7 @@ def connect(host, username, password, protocol='ssh', retry=5):
     count = 1
     while count <= retry:
         logger.log(logging.INFO, 'Connecting to ' + host + ' via ' + protocol + ', try ' + str(count) + ' ...')
-        
+
         try:
             if protocol == 'ssh':
                 if paramiko is None:
@@ -179,6 +204,12 @@ def connect(host, username, password, protocol='ssh', retry=5):
                 raise ValueError(f"Unsupported protocol: {protocol}")
         except (OSError, Exception) as e:
             logger.log(logging.ERROR, 'Fail to login, ' + str(e))
+
+            # Don't retry if authentication failed
+            if (paramiko and isinstance(e, paramiko.AuthenticationException)) or \
+               (str(e) == 'Wrong password or connection failed'):
+                raise e
+
             count += 1
             if count <= retry:
                 time.sleep(3)
