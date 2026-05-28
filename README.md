@@ -30,7 +30,7 @@ python batch-config.py 192.168.1.108 192.168.1.128 --username admin --password a
 ```
 
 ### 2. iGS03E mDNS Configurator (`igs03e-batch-config-by-mdns.py`)
-A specialized version for **iGS03E** devices. It uses mDNS to automatically discover devices on the local network and apply configuration as they appear.
+A specialized version for **iGS03E** devices. It uses mDNS to automatically discover iGS03E devices on the local network and apply configuration as they appear.
 
 > [!IMPORTANT]
 > **CAUTION**: This script will automatically apply configuration settings to **ALL** iGS03E devices it discovers on the local network. Use with care.
@@ -46,13 +46,17 @@ This tool automatically selects the connection protocol based on the device firm
 ## Initial Configuration for New Devices
 For new **iGS03W/iGS03M/iGS03MP** devices, you can follow these steps for initial setup:
 
-1. **Power on** the iGS03W/M/MP device.
-2. **Connect** to the device's WiFi AP manually (it usually creates an open AP).
-3. **Run the batch configurator** with the default AP gateway address:
+1. Modify `batch-config.py` for your specified configurations ([Customizing Commands](#customizing_commands))
+2. **Power on** the iGS03W/M/MP device.
+3. **Connect** to the iGS03 device's WiFi AP manually.
+4. **Run the batch configurator** with the default AP gateway address:
    ```bash
-   python batch-config.py 192.168.10.1
+   python batch-config.py --set-password iampassword 192.168.10.1
    ```
-4. **Repeat** steps 1-3 for each additional device.
+5. **Repeat** steps 2-4 for each additional device.
+
+> [!IMPORTANT]
+> **CAUTION**: For security reason, change default password is required to enable iGS03 data publish functionality. Use **--set-password** to change the password for each device.
 
 ## Customizing Commands
 Both scripts are designed to be updated manually for your specific requirements. You must modify the **desired** commands in the source code.
@@ -65,10 +69,13 @@ client.exec('MQTT PUBTOPIC', f'GNS_{identity}')
 client.exec('BLE PAYLOADWD 1', 'XXFFXX008XBC')
 ```
 
+Avaiable commands can be found in [iGS03 Series Telnet Command](https://www.ingics.com/doc/Gateway/GW0017_iGS03_Telnet_Command.pdf).
+
 ## Options
 - `--telnet`: Use Telnet protocol (SSH is the default).
 - `--username`: Custom login username (default: `admin`).
 - `--password`: Custom login password (default: `admin`).
+- `--set-password`: Change login password
 
 ## Notice
 The scripts support SSH and Telnet. SSH is used for V3.0.0 and above firmware, and Telnet is used for legacy firmware.
